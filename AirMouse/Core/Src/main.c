@@ -124,18 +124,11 @@ int16_t Gyro_Z_RAW = 0;
 
 float Ax, Ay, Az, Gx, Gy, Gz;
 
-int16_t min_xval = 128;
-int16_t max_xval = -128;
-int16_t min_yval = 128;
-int16_t max_yval = -128;
-
-int16_t newxval = 0;
-int16_t newyval = 0;
-
 uint8_t Accel_Data[7];
 uint8_t Gyro_Data[7];
 
-uint8_t handshake[1];
+uint8_t handshake_rx[1];
+uint8_t handshake_tx[7];
 
 
 
@@ -181,7 +174,7 @@ void MPU6050_Read_Accel (void)
 
 	for(int i=0; i<6; i++)
 	{
-		Accel_Data[i+1] = Rec_Data[i];
+		Accel_Data[i] = Rec_Data[i];
 	}
 
 	Accel_X_RAW = (int16_t)(Rec_Data[0] << 8 | Rec_Data [1]);
@@ -208,7 +201,7 @@ void MPU6050_Read_Gyro (void)
 
 	for(int i=0; i<6; i++)
 		{
-			Gyro_Data[i+1] = Rec_Data[i];
+			Gyro_Data[i] = Rec_Data[i];
 		}
 
 	Gyro_X_RAW = (int16_t)(Rec_Data[0] << 8 | Rec_Data [1]);
@@ -225,23 +218,6 @@ void MPU6050_Read_Gyro (void)
 	Gz = Gyro_Z_RAW/GyroSensitivity;
 }
 
-void MPU6050_Calibrate (void)
-{
-	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 1);
-
-	/*for(int i=0; i<50; i++)
-	{
-		MPU6050_Read_Accel ();
-		min_xval = MIN(min_xval,Accel_X_RAW);
-		max_xval = MAX(max_xval,Accel_X_RAW);
-
-		min_yval = MIN(min_yval,Accel_Y_RAW);
-		max_yval = MAX(max_yval,Accel_Y_RAW);
-		HAL_Delay (100);
-	}*/
-
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, 0);
-}
 /* USER CODE END 0 */
 
 /**
@@ -278,9 +254,20 @@ int main(void)
   SSD1306_Init();
   MPU6050_Init();
   SSD1306_Clear();
-  //MPU6050_Calibrate();
-  HAL_UART_Receive_IT(&huart1, (uint8_t *)handshake, 1);
-  //int test = 0;
+  handshake_rx[0] = 0;
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)handshake_rx, 1);
+
+
+  /*
+   * F407			F103
+   * PA3=RX   -->	PA9
+   * PA2=TX   --> 	PA10
+   *
+   * F103
+   * PB8 SCL
+   * PB9 SDA
+   */
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -291,117 +278,8 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  //MPU6050_Init();
-
-	  switch(handshake[0])
-	  {
-	  case 1:
-
-		  HAL_UART_Transmit(&huart1, (uint8_t *)handshake, 1, 10);
-		  break;
-
-	  case 2:
-		  MPU6050_Read_Accel ();
-		  Accel_Data[0] = 2;
-		  HAL_UART_Transmit(&huart1, (uint8_t *)Accel_Data, 7, 10);
-		  break;
-
-	  case 3:
-		  MPU6050_Read_Gyro ();
-		  Gyro_Data[0] = 3;
-		  HAL_UART_Transmit(&huart1, (uint8_t *)Gyro_Data, 7, 10);
-		  break;
-
-	  default:
-//		  test=test+1;
-		  break;
-	  }
-	 // HAL_UART_Transmit(&huart1, (uint8_t *)Accel_Data, 7, 10);
-	 // HAL_UART_Transmit(&huart1, (uint8_t *)Gyro_Data, 7, 10);
-	  //SSD1306_Init();
-
-	  /*
-  	  sprintf(texto, "%.2f  ", Ax);
-  	  SSD1306_GotoXY(0, 5);
-  	  SSD1306_GotoXY(0, 5);
-  	  SSD1306_Puts("Ax=", &Font_7x10, 1);
-  	  SSD1306_Puts(texto, &Font_7x10, 1);
-
- 	  sprintf(texto, "%.2f  ", Ay);
-  	  SSD1306_GotoXY(0, 20);
-  	  SSD1306_GotoXY(0, 20);
-  	  SSD1306_Puts("Ay=", &Font_7x10, 1);
-  	  SSD1306_Puts(texto, &Font_7x10, 1);
-
-	  sprintf(texto, "%.2f  ", Az);
-  	  SSD1306_GotoXY(0, 35);
-  	  SSD1306_GotoXY(0, 35);
-  	  SSD1306_Puts("Az=", &Font_7x10, 1);
-  	  SSD1306_Puts(texto, &Font_7x10, 1);
-
-	  sprintf(texto, "%.2f  ", Gx);
-  	  SSD1306_GotoXY(65, 5);
-  	  SSD1306_GotoXY(65, 5);
-  	  SSD1306_Puts("Gx=", &Font_7x10, 1);
-  	  SSD1306_Puts(texto, &Font_7x10, 1);
-
-  	  sprintf(texto, "%.2f  ", Gy);
-  	  SSD1306_GotoXY(65, 20);
-  	  SSD1306_GotoXY(65, 20);
-  	  SSD1306_Puts("Gy=", &Font_7x10, 1);
-  	  SSD1306_Puts(texto, &Font_7x10, 1);
-
-  	  sprintf(texto, "%.2f  ", Gz);
-  	  SSD1306_GotoXY(65, 35);
-  	  SSD1306_GotoXY(65, 35);
-  	  SSD1306_Puts("Gz=", &Font_7x10, 1);
-  	  SSD1306_Puts(texto, &Font_7x10, 1);
-
-  	  sprintf(texto, "%d", mousehid.mouse_x);
-  	  SSD1306_GotoXY(0, 50);
-  	  SSD1306_GotoXY(0, 50);
-  	  SSD1306_Puts("X", &Font_7x10, 1);
-  	  SSD1306_Puts(texto, &Font_7x10, 1);
-
-  	  SSD1306_UpdateScreen();
-*/
- /*
-	  if(Accel_X_RAW < min_xval)
-  	  {
-  		  newxval = Accel_X_RAW - min_xval;
-  	  }
-
-  	  else if (Accel_X_RAW > max_xval)
-  	  {
-  		  newxval = Accel_X_RAW - max_xval;
-  	  }
-
-  	  if(Accel_Y_RAW < min_yval)
-  	  {
-  		  newyval = Accel_Y_RAW - min_yval;
-  	  }
-
-  	  else if (Accel_Y_RAW > max_xval)
-  	  {
-  		  newyval = Accel_Y_RAW - max_xval;
-  	  }
-
-  	  if ((newxval > 20) || (newxval <-20))
-  	  {
-  		  mousehid.mouse_y = (newxval)/100;
-  	  }
-
-  	  else mousehid.mouse_y = 0;
-
-  	  if ((newyval > 20) || (newyval <-20))
-  	  {
-  		  mousehid.mouse_x = (newyval)/100;
-  	  }
-
-  	  else mousehid.mouse_x = 0;
-*/
-  //	  USBD_HID_SendReport(&hUsbDeviceFS,&mousehid, sizeof (mousehid));
-
+	  MPU6050_Read_Accel ();
+	  MPU6050_Read_Gyro ();
 
 
 
@@ -498,7 +376,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 9600;
+  huart1.Init.BaudRate = 38400;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -531,18 +409,30 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PC13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  /*Configure GPIO pin : LED_Pin */
+  GPIO_InitStruct.Pin = LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(huart);
+  /* NOTE: This function should not be modified, when the callback is needed,
+           the HAL_UART_TxCpltCallback could be implemented in the user file
+   */
+
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)handshake_rx, 1);
+
+}
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -551,8 +441,31 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   /* NOTE: This function should not be modified, when the callback is needed,
            the HAL_UART_RxCpltCallback could be implemented in the user file
    */
+  //handshake_rx[0] = 0;
+  HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
-  HAL_UART_Receive_IT(&huart1, (uint8_t *)handshake, 1);
+  switch(handshake_rx[0])
+  {
+  case 1:
+	  handshake_tx[6] = 1;
+	  HAL_UART_Transmit_IT(&huart1, (uint8_t *)handshake_tx, 7);
+	  break;
+
+  case 2:
+	  Accel_Data[6] = 2;
+	  HAL_UART_Transmit_IT(&huart1, (uint8_t *)Accel_Data, 7);
+	  break;
+
+  case 3:
+	  Gyro_Data[6] = 3;
+	  HAL_UART_Transmit_IT(&huart1, (uint8_t *)Gyro_Data, 7);
+	  break;
+
+  default:
+	  HAL_UART_Receive_IT(&huart1, (uint8_t *)handshake_rx, 1);
+	  break;
+  }
+
 }
 
 /* USER CODE END 4 */

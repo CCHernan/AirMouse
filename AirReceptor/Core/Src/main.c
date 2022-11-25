@@ -57,19 +57,24 @@ mouseHID mousehid = {0,0,0,0};
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart2;
-DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN PV */
 int16_t Accel_X_RAW = 0;
 int16_t Accel_Y_RAW = 0;
 int16_t Accel_Z_RAW = 0;
+uint8_t Accel_Data[7];
 
 int16_t Gyro_X_RAW = 0;
 int16_t Gyro_Y_RAW = 0;
 int16_t Gyro_Z_RAW = 0;
+uint8_t Gyro_Data[7];
 
 uint8_t rxData[7];
-uint8_t handshake[1];
+uint8_t ControlBit[1];
+uint8_t handshake_tx[1];
+uint8_t handshake_rx[1];
+uint8_t handshake_ok = 0;
+uint8_t rx_end = 0;
 
 float Ax, Ay, Az, Gx, Gy, Gz;
 
@@ -78,7 +83,6 @@ float Ax, Ay, Az, Gx, Gy, Gz;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -117,13 +121,19 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
-//char txData[30] = "AT+NAME\r\n";
-//char rxData[30];
-  HAL_UART_Receive_IT(&huart2, (uint8_t *)rxData, 1);
+
+  /*
+   * F407			F103
+   * PA3=RX   -->	PA9
+   * PA2=TX   --> 	PA10
+   *
+   * F103
+   * PB8 SCL
+   * PB9 SDA
+   */
 
   /* USER CODE END 2 */
 
@@ -135,50 +145,60 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-		  switch(rxData[0])
+
+
+		  switch(ControlBit[0])
 		  {
 
 		  case 1:
 
-			  handshake[0] = 2;
-			  HAL_UART_Transmit(&huart2, (uint8_t *)handshake, 1, 10);
+			  rx_end = 0;
+
 			  break;
 		  case 2:
 
-			  Accel_X_RAW = (int16_t)(rxData[1] << 8 | rxData[2]);
-			  Accel_Y_RAW = (int16_t)(rxData[3] << 8 | rxData[4]);
-			  Accel_Z_RAW = (int16_t)(rxData[5] << 8 | rxData[6]);
+			  rx_end = 0;
+
+			  Accel_X_RAW = (int16_t)(Accel_Data[0] << 8 | Accel_Data[1]);
+			  Accel_Y_RAW = (int16_t)(Accel_Data[2] << 8 | Accel_Data[3]);
+			  Accel_Z_RAW = (int16_t)(Accel_Data[4] << 8 | Accel_Data[5]);
 
 			  Ax = Accel_X_RAW/AccelSensitivity;
 			  Ay = Accel_Y_RAW/AccelSensitivity;
 			  Az = Accel_Z_RAW/AccelSensitivity;
 
-			  handshake[0] = 3;
-	  		  HAL_UART_Transmit(&huart2, (uint8_t *)handshake, 1, 10);
-
 			  break;
 
 		  case 3:
 
-			  Gyro_X_RAW = (int16_t)(rxData[1] << 8 | rxData[2]);
-			  Gyro_Y_RAW = (int16_t)(rxData[3] << 8 | rxData[4]);
-			  Gyro_Z_RAW = (int16_t)(rxData[5] << 8 | rxData[6]);
+			  rx_end = 0;
+
+			  Gyro_X_RAW = (int16_t)(Gyro_Data[0] << 8 | Gyro_Data[1]);
+			  Gyro_Y_RAW = (int16_t)(Gyro_Data[2] << 8 | Gyro_Data[3]);
+			  Gyro_Z_RAW = (int16_t)(Gyro_Data[4] << 8 | Gyro_Data[5]);
 
 			  Gx = Gyro_X_RAW/GyroSensitivity;
 			  Gy = Gyro_Y_RAW/GyroSensitivity;
 			  Gz = Gyro_Z_RAW/GyroSensitivity;
 
-			  handshake[0] = 2;
-	  		  HAL_UART_Transmit(&huart2, (uint8_t *)handshake, 1, 10);
 
 			  break;
 
 		  default:
-
-			  handshake[0] = 1;
-			  HAL_UART_Transmit(&huart2, (uint8_t *)handshake, 1, 10);
-			  break;
+			  if(rx_end>=200 )
+			  {
+			  handshake_tx[0] = 1;
+			  HAL_UART_Transmit_IT(&huart2, (uint8_t *)handshake_tx, 1);
+			  rx_end = 0;
+			  }
+			  rx_end++;
 		  }
+
+
+		  mousehid.mouse_y = Gy/10;
+		  mousehid.mouse_x = Gx/10;
+		  USBD_HID_SendReport(&hUsbDeviceFS,&mousehid, sizeof (mousehid));
+
 		  /*while(mousehid.mouse_y < 10)
 	  {
 		  mousehid.mouse_y++;
@@ -223,9 +243,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 168;
+  RCC_OscInitStruct.PLL.PLLN = 96;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 7;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -240,7 +260,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -262,7 +282,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 9600;
+  huart2.Init.BaudRate = 38400;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -276,22 +296,6 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 
 }
 
@@ -420,6 +424,17 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(huart);
+  /* NOTE: This function should not be modified, when the callback is needed,
+           the HAL_UART_TxCpltCallback could be implemented in the user file
+   */
+	  HAL_UART_Receive_IT(&huart2, (uint8_t *)rxData, 7);
+
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   /* Prevent unused argument(s) compilation warning */
@@ -427,31 +442,41 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   /* NOTE: This function should not be modified, when the callback is needed,
            the HAL_UART_RxCpltCallback could be implemented in the user file
    */
-
-  switch(rxData[0])
+  switch(rxData[6])
   {
-  	  case 1:
+  case 1:
+	  ControlBit[0] = rxData[6];
+	  handshake_tx[0] = 2;
+	  break;
 
-  		  HAL_UART_Receive_IT(&huart2, (uint8_t *)rxData, 7);
-  		  break;
+  case 2:
+		for(int i=0; i<6; i++)
+			{
+				Accel_Data[i] = rxData[i];
+			}
+		ControlBit[0] = rxData[6];
+	  handshake_tx[0] = 3;
+	  rxData[6] = 0;
+	  break;
 
-  	  case 2:
+  case 3:
+		for(int i=0; i<6; i++)
+			{
+				Gyro_Data[i] = rxData[i];
+			}
+		ControlBit[0] = rxData[6];
+	  handshake_tx[0] = 2;
+	  rxData[6] = 0;
+	  break;
 
-  		  HAL_UART_Receive_IT(&huart2, (uint8_t *)rxData, 7);
-  		  break;
-
-  	  case 3:
-
-  		  HAL_UART_Receive_IT(&huart2, (uint8_t *)rxData, 7);
-  		  break;
-
-  	  default:
-
-  		  HAL_UART_Receive_IT(&huart2, (uint8_t *)rxData, 1);
-  		  break;
+  default:
+	  ControlBit[0] = 0;
+	  handshake_tx[0] = 1;
+	  break;
   }
+  HAL_UART_Transmit_IT(&huart2, (uint8_t *)handshake_tx, 1);
 
-  //HAL_UART_Receive_IT(&huart2, (uint8_t *)rxData, 7);
+
 }
 /* USER CODE END 4 */
 
